@@ -1,0 +1,3 @@
+**/build/
+**/firmware.hex
+.DS_Store

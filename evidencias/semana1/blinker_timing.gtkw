@@ -1,0 +1,12 @@
+[*] GTKWave Analyzer v3.3.116
+[dumpfile] "../../Labs/lab-femtorv/lab-femtorv/blinker/build/tb_blinker.vcd"
+[savefile] "blinker_timing.gtkw"
+[timestart] 240
+[size] 1200 700
+[pos] -1 -1
+@28
+tb_blinker.uut.clk
+@29
+tb_blinker.uut.PC[4:0]
+tb_blinker.uut.tick
+tb_blinker.uut.leds[4:0]

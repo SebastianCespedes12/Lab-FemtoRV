@@ -1,0 +1,438 @@
+# Semana 1 · Del contador al procesador
+
+[← Volver a la guía](README.md)
+
+**Objetivo de la semana:** entender qué es un procesador, ejecutar un programa en C en el FemtoRV (simulado y en la tarjeta) y construir el mapa de memoria del SoC.
+
+**Antes de empezar:** lean [Fundamentos 01](Fundamentos/01_RISC-V_y_FemtoRV.md), [Fundamentos 03](Fundamentos/03_De_C_a_la_FPGA.md) y [Fundamentos 02](Fundamentos/02_Bus_y_perifericos.md) completos. Activen el entorno en cada terminal: `source digital-logic-design activate`.
+
+**Regla de trabajo:** en cada tarea que lo pida, **escriban la predicción en la bitácora antes de ejecutar el comando**. La predicción equivocada que se explica vale más que el resultado correcto copiado.
+
+| Tarea | Qué hacen |
+|---|---|
+| [1](#tarea-1-el-blinker-desde-memoria) | Blinker desde memoria: predecir, simular, llevar a la tarjeta |
+| [2](#tarea-2-el-primer-programa-en-el-femtorv) | Primer programa en el FemtoRV: simulación y tarjeta |
+| [3](#tarea-3-el-mapa-de-memoria) | Mapa de memoria del SoC |
+| [4](#tarea-4-el-femtorv-por-dentro-visto-de-lejos) | Reconocer el PC, la máquina de estados y el bus en el código del FemtoRV |
+| [5](#tarea-5-de-una-línea-de-c-al-bus) | De una línea de C a una instrucción y al bus |
+| [✓](#punto-de-control) | Punto de control al inicio de la semana 2 |
+
+---
+
+## Tarea 1. El blinker desde memoria
+
+Carpeta: `blinker/`. Archivo principal: `blinker/rtl/blinker.v`.
+
+### 1.1 Leer y predecir
+
+Lean `blinker.v` y respondan en la bitácora **antes de simular**:
+
+1. Dibujen el diagrama de bloques del circuito: divisor, PC, ROM y LEDs, con el ancho en bits de cada señal.
+2. Completen la tabla para las primeras 8 posiciones:
+
+   | PC | LEDS (predicción) | LEDS (simulación) |
+   |---|---|---|
+   | 0 | | |
+   | 1 | | |
+   | … | | |
+   | 7 | | |
+
+3. El testbench usa `DIV_BITS = 3` y un reloj de 25 MHz (periodo 40 ns). ¿Cada cuántos **ciclos** y cada cuántos **nanosegundos** avanza el PC?
+4. En la tarjeta, `DIV_BITS = 22`. ¿Cuánto dura cada paso en la Colorlight (25 MHz) y en la Tang Nano (27 MHz)? ¿Cuánto dura la secuencia completa de 21 pasos?
+5. La ROM se lee en un `always @(posedge clk)`. ¿Los LEDs cambian en el **mismo** ciclo que el PC o en el **siguiente**? ¿Por qué?
+
+### 1.2 Simular
+
+```bash
+cd blinker
+make sim
+```
+
+La terminal muestra una línea por cada cambio de los LEDs, por ejemplo:
+
+```
+t =    380 ns   PC =  1   LEDS = 00001
+t =    700 ns   PC =  2   LEDS = 00010
+```
+
+Completen la columna "simulación" de la tabla y comprueben las respuestas 3 y 5. Abran las formas de onda con `make wave`, agreguen `clk`, `PC`, `tick` y `leds` (dentro de `uut`) y hagan una captura donde se vea **un** cambio del PC y el cambio de los LEDs un ciclo después.
+
+### 1.3 Llevar a la tarjeta
+
+Conecten los LEDs según [Tarjetas.md](Tarjetas.md) (en la Tang Nano se usan los de la tarjeta).
+
+```bash
+make syn BOARD=colorlight        # o BOARD=tangnano9k
+make config BOARD=colorlight
+```
+
+Midan con un cronómetro cuánto tarda la secuencia completa (tomen el tiempo de 5 vueltas y dividan) y compárenlo con su respuesta 4.
+
+### 1.4 Preguntas para la bitácora
+
+1. ¿Qué tendría que **agregarse** a este circuito para que fuera un procesador? Usen la tabla de la sección 1 de [Fundamentos 01](Fundamentos/01_RISC-V_y_FemtoRV.md#1-un-procesador-es-un-contador-que-lee-una-memoria).
+2. Si el contenido de la ROM fueran instrucciones y no patrones de LEDs, ¿qué bloque las interpretaría?
+
+---
+
+## Tarea 2. El primer programa en el FemtoRV
+
+Carpeta: `soc/`. Programa: `soc/firmware/hola.c`.
+
+### 2.1 Simular el programa tal como está
+
+```bash
+cd soc
+make sim
+```
+
+El `Makefile` hace cuatro cosas, en este orden (miren la terminal):
+
+1. Compila `firmware/hola.c` con `riscv64-unknown-elf-gcc`.
+2. Genera `build/firmware.lst` (el listado) y `firmware.hex` (el programa para la memoria).
+3. Compila el SoC y el testbench con Icarus Verilog.
+4. Simula: el testbench escucha la UART y muestra lo que el programa envía.
+
+Resultado esperado:
+
+```
+=== Simulacion del SoC: salida de la UART ===
+Hola desde el FemtoRV
+Por software (sumas repetidas): 5535
+Por hardware (periferico MULT): 5535
+Fin. El programa queda en un bucle infinito.
+
+=== Fin: 155707 ciclos simulados, 145 caracteres recibidos, LEDS_EXT = 00000000 ===
+```
+
+Anoten en la bitácora dos números que aparecen en la terminal:
+
+- **Cuántas palabras de la RAM ocupa el programa.** Sale al final de la compilación, antes de que empiece la simulación, en una línea como `firmware.hex: 177 de 8192 palabras usadas (2.2 %)`. La escribe `bin2hex.py` al crear `firmware.hex`: cuenta las palabras de 32 bits que tienen instrucciones o datos; el resto de la RAM queda en cero. Solo aparece cuando el programa se compila: si ya habían ejecutado `make sim` antes y no cambiaron el C, no se vuelve a compilar. Para verla otra vez: `make clean` y luego `make sim`.
+- **Cuántos ciclos de reloj se simularon.** Es el primer número de la última línea: `=== Fin: 155707 ciclos simulados …`. Lo cuenta el testbench desde el inicio hasta que la UART deja de enviar.
+
+### 2.2 Modificar el programa
+
+Editen `firmware/hola.c` para que, además, imprima el número del grupo y los nombres de sus integrantes. Vuelvan a ejecutar `make sim`. Copien la salida en la bitácora.
+
+### 2.3 Llevar el programa a la tarjeta
+
+Conecten la UART según [Tarjetas.md](Tarjetas.md) (en la Colorlight hace falta un adaptador USB-serial; en la Tang Nano basta el cable USB).
+
+```bash
+make syn BOARD=colorlight         # tarda 1 a 2 minutos
+make config BOARD=colorlight
+make terminal BOARD=colorlight    # salir: Ctrl-a y luego Ctrl-x
+```
+
+Con la terminal abierta, presionen el botón de reset de la tarjeta: el mensaje debe aparecer de nuevo.
+
+Al final de `make syn` aparece una tabla de recursos. **Guárdenla en la bitácora**: la van a comparar en la semana 2 con el SoC que tenga su periférico.
+
+### 2.4 Preguntas para la bitácora
+
+1. ¿Por qué el mismo programa produce la misma salida en la simulación y en la tarjeta, si en la simulación la UART es mucho más rápida? Para responder, sigan estos tres pasos:
+   - ¿Dónde se fija la velocidad de la UART? Busquen `BAUD` en `sim/tb_soc.v` (simulación) y en `boards/tangnano9k/top_tangnano9k.v` o `boards/colorlight/top_colorlight.v` (tarjeta). ¿Está en el programa en C o en el hardware?
+   - En `firmware/soc.h`, la función `uart_putc` termina con un `while`. ¿Qué pregunta ese `while` una y otra vez, y cuándo sale de él?
+   - Con lo anterior: ¿el programa espera un tiempo fijo o espera a que la UART termine? ¿Por qué eso hace que funcione igual a cualquier velocidad?
+2. ¿Por qué cada cambio en `hola.c` obliga a ejecutar `make syn` otra vez? ([Fundamentos 03, sección 2](Fundamentos/03_De_C_a_la_FPGA.md#2-cómo-llega-el-programa-a-la-fpga)).
+
+---
+
+## Tarea 3. El mapa de memoria
+
+**Idea central de esta tarea:** el procesador no sabe qué es una UART ni un multiplicador. Solo sabe **leer y escribir en direcciones**. El SoC decide, según la dirección, **qué bloque** atiende cada acceso. Esa lista de "dirección → bloque" es el **mapa de memoria**. En la semana 2 su propio periférico entrará en este mapa, y el programa en C lo controlará escribiendo en sus direcciones.
+
+Van a construir el mapa **leyendo el Verilog**, que es la fuente de verdad (`soc.h` es solo su traducción a C).
+
+### 3.0 Los bloques del SoC
+
+| Bloque | Qué es | Para qué está en el SoC |
+|---|---|---|
+| **RAM** | Memoria de 32 KB | Guarda el programa (las instrucciones) y sus variables |
+| **UART** | Puerto serial: envía y recibe bytes, un bit tras otro, por un solo cable | Que el programa le escriba texto al PC (la terminal) |
+| **Multiplicador** | Circuito que multiplica dos números de 16 bits | El FemtoRV no tiene instrucción de multiplicar: se la delega a este periférico |
+| **Libres** | Espacios reservados, sin nada conectado | En la semana 2, aquí va su periférico GPIO (LEDs y pulsadores) |
+
+### 3.1 Tabla de bloques: ¿qué bloque atiende cada dirección?
+
+**Archivos:** `soc/rtl/chip_select.v` y `soc/rtl/SOC.v`.
+
+Una dirección tiene 32 bits, que en hexadecimal son 8 dígitos (cada dígito hexadecimal = 4 bits). `chip_select.v` mira **solo los 4 primeros dígitos** (los 16 bits altos) para decidir el bloque:
+
+```
+0x0042_0008
+  ────┬──── ────┬────
+  bits [31:16]  bits [15:0]
+  = 0042        = 0008
+  ¿QUÉ BLOQUE?  ¿QUÉ REGISTRO dentro del bloque? (eso es la tabla 3.2)
+```
+
+```mermaid
+flowchart LR
+    A["mem_addr<br/>(dirección completa)"] --> B["chip_select.v<br/>mira los bits [31:16]"]
+    B -->|"0040"| U["cs[0] → UART"]
+    B -->|"0041"| G["cs[1] → libre (GPIO)"]
+    B -->|"0042"| M["cs[2] → multiplicador"]
+    B -->|"0043 a 0045"| L["cs[3], cs[4], cs[5] → libres"]
+    B -->|"cualquier otro"| R["cs[6] → RAM"]
+```
+
+`cs` (*chip select*) tiene 7 bits y **solo uno vale 1 a la vez**: el del bloque elegido. Los demás bloques ven su `cs` en 0 e ignoran el acceso.
+
+**Dónde mirar:**
+
+| Archivo | Líneas | Qué encuentran |
+|---|---|---|
+| `chip_select.v` | 24 – 29 | `CHIPxADDR`: los 4 primeros dígitos de cada bloque. **Aquí revisan el rango de cada bloque.** |
+| `chip_select.v` | 31 – 37 | `CHIPxCS`: qué bit de `cs` corresponde a cada bloque (el bit que vale 1, contando desde la derecha y empezando en 0) |
+| `chip_select.v` | 40 – 50 | El `case`: "si los bits altos valen `CHIPxADDR`, entonces `cs = CHIPxCS`". `default` = si no coincide ninguno |
+| `SOC.v` | 73 – 79 | El nombre de cada línea de `cs` y a qué bloque va (`cs_uart`, `cs_mult`, `cs_ram`…) |
+| `SOC.v` | 85 – 93 | Qué dato vuelve al procesador cuando **lee** de cada bloque (`chipX_dout`). `32'b0` = nada conectado: siempre se lee 0 |
+
+**Ejemplo resuelto: el multiplicador, `0x0042_xxxx`**
+
+1. Los 4 primeros dígitos son `0042`. En `chip_select.v`, **línea 26**: `CHIP2ADDR = 16'h0042` → es el bloque 2.
+2. **Línea 44** del `case`: `CHIP2ADDR: cs = CHIP2CS`.
+3. **Línea 33**: `CHIP2CS = 7'b0000100` → el 1 está en el bit 2 → **`cs[2]`**.
+4. En `SOC.v`, **línea 75**: `wire cs_mult = cs[2]` → va al **multiplicador**.
+5. En `SOC.v`, **línea 89**: `.chip2_dout(mult_dout)` → al leer, vuelve **`mult_dout`**.
+
+Completen la tabla siguiendo los mismos cinco pasos:
+
+| Rango de direcciones | Bloque | Señal `cs` | Dato que vuelve al CPU (`chipX_dout`) |
+|---|---|---|---|
+| `0x0000_0000` – `0x0000_7FFF` | | | |
+| `0x0040_0000` – `0x0040_FFFF` | | | |
+| `0x0041_0000` – `0x0041_FFFF` | | | |
+| `0x0042_0000` – `0x0042_FFFF` | Multiplicador | `cs[2]` = `0000100` | `mult_dout` |
+| `0x0043_0000` – `0x0045_FFFF` | | | |
+
+> **Pista para la RAM:** `0000` no aparece en las líneas 24 a 29. ¿Qué línea del `case` se usa entonces? El límite `7FFF` no sale de `chip_select.v` sino del tamaño de la RAM: 8192 palabras × 4 bytes = 32 768 bytes = `0x8000` direcciones (de `0x0000` a `0x7FFF`).
+
+### 3.2 Tabla de registros: ¿qué hace cada dirección dentro de un bloque?
+
+**Archivos:** `soc/rtl/uart/perip_uart.v` y `soc/rtl/mult/perip_mult.v`.
+
+**Para qué sirve esta parte.** La UART y el multiplicador son dos periféricos que **ya están conectados** al mapa de memoria. No hay que diseñarlos: hay que **abrirlos y ver cómo leen y escriben datos por dentro**. Es el modelo exacto del periférico que van a diseñar en la semana 2 (y de los de la consola). Todo periférico responde a las mismas tres preguntas:
+
+1. **¿Qué registro me piden?** Un *decodificador* mira los bits bajos de la dirección.
+2. **¿Qué hago cuando el procesador escribe?** Guardo el dato en ese registro, si `cs` y `wr` valen 1.
+3. **¿Qué devuelvo cuando el procesador lee?** Pongo ese registro en `d_out`, si `cs` y `rd` valen 1.
+
+#### Dónde están los registros
+
+Cada bloque de la tabla 3.1 ocupa 65 536 direcciones, pero solo usa unas pocas: una por registro. La dirección de un registro es la **base del bloque** más un **desplazamiento**:
+
+```mermaid
+flowchart LR
+    subgraph UART["Bloque UART · 0x0040_xxxx · cs[0]"]
+        direction TB
+        U1["0x0040_0008 · DATO<br/>(base + 0x08)"] ~~~ U2["0x0040_0010 · CONTROL<br/>(base + 0x10)"]
+    end
+    subgraph MULT["Bloque multiplicador · 0x0042_xxxx · cs[2]"]
+        direction TB
+        M1["0x0042_0004 · A<br/>(base + 0x04)"] ~~~ M2["0x0042_0008 · B<br/>(base + 0x08)"] ~~~ M3["0x0042_000C · INIT<br/>(base + 0x0C)"] ~~~ M4["0x0042_0010 · RESULT<br/>(base + 0x10)"] ~~~ M5["0x0042_0014 · DONE<br/>(base + 0x14)"]
+    end
+    UART ~~~ MULT
+```
+
+La misma dirección llega completa a dos lugares, y **cada uno mira una parte distinta**: `chip_select.v` elige el bloque con los bits altos, y el periférico elige el registro con los bits bajos.
+
+```mermaid
+flowchart LR
+    A["mem_addr = 0x0040_0008"] --> CS["chip_select.v<br/>bits [31:16] = 0040<br/>→ activa cs[0]"]
+    A --> P["perip_uart.v<br/>bits [4:0] = 08<br/>→ registro DATO"]
+    CS -->|"cs = 1: el acceso es para la UART"| P
+```
+
+#### Cómo leer un periférico: seguir las señales
+
+Al abrir un periférico aparecen señales como `wr`, `cs`, `d_in` o `sel`. **Cuando no sepan qué es una señal, búsquenla** (Ctrl+F en Lite XL; F3 salta a la siguiente coincidencia) hasta encontrar de dónde viene:
+
+1. Si está en la cabecera del módulo como `input`, viene de afuera: búsquenla en `SOC.v`, donde se conecta el periférico.
+2. Si no es una entrada, nace adentro: busquen dónde se le asigna un valor.
+
+Ejemplo con `wr`: en `perip_uart.v` es `input wr` (línea 11) → en `SOC.v` la UART se conecta con `.wr(wr)` (línea 128) → y `wr` nace en `SOC.v` línea 64: `wire wr = |mem_wmask;` (el `|` es un OR de los 4 bits: vale 1 si hay escritura).
+
+| Señal en el periférico | De dónde viene (UART: `SOC.v`) | Qué es |
+|---|---|---|
+| `cs` | `.cs(cs_uart)`, línea 125 → línea 73 | 1 si la dirección es de este periférico |
+| `wr` | `.wr(wr)`, línea 128 → línea 64 | 1 si el procesador está **escribiendo** |
+| `rd` | `.rd(rd)`, línea 127 → línea 65 | 1 si el procesador está **leyendo** |
+| `addr` | `.addr(mem_addr)`, línea 126 | La dirección completa |
+| `d_in` | `.d_in(mem_wdata)`, línea 124 | El dato que escribe el procesador |
+| `d_out` | `.d_out(uart_dout)`, línea 129 → va a `chip_select` | Lo que el periférico responde cuando se le lee |
+
+El multiplicador recibe las mismas señales (su conexión está en `SOC.v`, líneas 144 – 153). Abreviaturas que van a ver en casi cualquier diseño: `wr` = *write* (escribir) · `rd` = *read* (leer) · `d_in` / `d_out` = *data in* / *data out* · `sel` o `s` = *select* · `cs` = *chip select* · `tx` / `rx` = transmitir / recibir.
+
+#### La UART por dentro: `perip_uart.v`
+
+| Líneas | Pregunta que responde | Qué hace |
+|---|---|---|
+| 26 y 134 – 138 | ¿Qué registro? | El decodificador recibe solo los **5 bits bajos** de la dirección (`addr[4:0]`). `5'h08` → `sel = 01` (DATO); `5'h10` → `sel = 10` (CONTROL). Solo si `cs = 1` |
+| 157 – 163 | ¿Qué guardo al escribir? | `if (sel[0] && wr)` guarda el byte a enviar; `if (sel[1] && wr)` guarda `uart_ctrl`. Para saber qué hace cada bit de `uart_ctrl`, busquen `uart_ctrl[` (líneas 61, 63 y 162) |
+| 165 – 171 | ¿Qué devuelvo al leer? | Pone en `d_out` lo que corresponde según `sel` |
+
+En la línea 168 aparecen llaves: `{22'b0, tx_busy, rx_avail, rx_error, 7'b0}`. Las llaves **pegan bits uno al lado del otro**; lo que está más a la izquierda queda en los bits más altos. Para saber en qué bit queda cada señal, **cuenten desde la derecha**: `7'b0` ocupa los bits 0 a 6, así que `rx_error` queda en el bit 7, y así sucesivamente.
+
+**Ejemplo resuelto: el registro DATO de la UART**
+
+- **Dirección completa:** base del bloque `0x0040_0000` + `0x08` (línea 135) = `0x0040_0008`.
+- **Al escribir** (línea 158): guarda `d_in[7:0]`, los 8 bits bajos, en `d_in_uart`, que va al transmisor como `tx_data` (línea 62): **el byte a enviar**.
+- **Al leer** (línea 167): devuelve `{24'b0, rx_data}`: **el último byte recibido**, en los bits [7:0].
+
+#### El multiplicador por dentro: `perip_mult.v`
+
+Responde a las mismas tres preguntas, pero está **escrito de otra forma**. Eso también es parte de lo que hay que aprender: lo importante son las tres partes, no el estilo con que se escriben.
+
+| Líneas | Pregunta que responde | Qué hace |
+|---|---|---|
+| 29 – 40 | ¿Qué registro? | Si `cs = 1`, compara `addr[4:0]` con `04`, `08`, `0C`, `10` y `14`, y enciende un bit de `s` (5 bits, uno por registro) |
+| 45 – 59 | ¿Qué guardo al escribir? | Si `cs && wr`, guarda en A, B o `init` según el bit de `s` que esté en 1. Fíjense en **cuántos bits de `d_in`** guarda cada uno |
+| 62 – 70 | ¿Qué devuelvo al leer? | Si `cs && rd`, pone en `d_out` el resultado o el bit `done` |
+| 75 – 83 | El trabajo propio | Conecta A, B e `init` al circuito que multiplica (`mult.v`), y recibe de él `result` y `done` |
+
+Diferencias con la UART que conviene notar:
+
+| | UART | Multiplicador |
+|---|---|---|
+| Decodificador | Un módulo aparte, `peripheral_uart_addr_decoder`, que produce `sel` (2 bits) | Dentro del mismo módulo; produce `s` (5 bits, un bit por registro) |
+| Escritura | `if (sel[0] && wr) d_in_uart <= ...` | `A = s[0] ? d_in[15:0] : A;` (un `? :` por registro, con `=`) |
+| Lectura | Actualiza `d_out` siempre que la dirección sea suya | Solo actualiza `d_out` si además `rd = 1` |
+| Leer un registro que no se puede leer | — | Devuelve el **último valor** que tuvo `d_out`, no 0 (el `case` de lectura no tiene `default`) |
+
+> El comentario de la línea 16 (`// 4 LSB from j1_io_addr`) quedó de otro proyecto: el decodificador usa **5** bits, `addr[4:0]`. Lean el código, no solo los comentarios.
+
+#### Completen la tabla
+
+Las direcciones y los nombres ya están, como guía. Ustedes completan si cada registro se puede leer, escribir o las dos cosas, y qué significan sus bits:
+
+| Dirección completa | Periférico | Nombre | Lectura / Escritura | Qué significan sus bits |
+|---|---|---|---|---|
+| `0x0040_0008` | UART | DATO | Las dos | **Escribir:** bits [7:0] = byte a enviar. **Leer:** bits [7:0] = último byte recibido |
+| `0x0040_0010` | UART | CONTROL | | |
+| `0x0042_0004` | MULT | A | | |
+| `0x0042_0008` | MULT | B | | |
+| `0x0042_000C` | MULT | INIT | | |
+| `0x0042_0010` | MULT | RESULT | | |
+| `0x0042_0014` | MULT | DONE | | |
+
+Comprueben al final que sus direcciones coinciden con los `#define` de `soc/firmware/soc.h`.
+
+### 3.3 Preguntas
+
+1. ¿Cuántos bits de la dirección mira `chip_select.v` para elegir el bloque, y cuántos mira cada periférico para elegir su registro?
+2. Hoy, si el programa escribe en `0x0041_0004`, ¿qué señal `cs` se activa y quién recibe la escritura? ¿Y qué obtiene si lee de esa dirección? (Revisen la línea 88 de `SOC.v`). En la semana 2 ese espacio será el de su periférico.
+
+---
+
+## Tarea 4. El FemtoRV por dentro, visto de lejos
+
+No van a diseñar el procesador ni a entender cada línea: solo a **reconocer** en su código tres piezas que ya conocen. Abran `soc/rtl/cpu/femtorv32_quark.v` y las secciones 6 y 7 de [Fundamentos 01](Fundamentos/01_RISC-V_y_FemtoRV.md#6-la-máquina-de-estados-del-femtorv).
+
+### 4.1 Ubicar
+
+Usen Ctrl+F para encontrar cada pieza y completen la tabla:
+
+| Pieza | Qué buscar | Líneas | Qué hace (una frase con sus palabras) |
+|---|---|---|---|
+| El PC | `PC;` y `PCplus4` | | |
+| La máquina de estados | `localparam FETCH_INSTR`, `reg [NB_STATES-1:0] state` y el `case` que cambia `state` | | |
+| La interfaz de memoria | `assign mem_addr` | | |
+
+### 4.2 Preguntas
+
+1. Según la línea 218, ¿qué pone el procesador en `mem_addr` cuando busca una instrucción y qué pone cuando ejecuta un `lw` o un `sw`? ¿Cuál de las dos es la que llega al `chip_select` cuando el programa escribe en la UART?
+2. Comparen con el blinker de la tarea 1: ¿qué pieza del FemtoRV equivale a su contador y cuál a su lectura de la ROM?
+
+---
+
+## Tarea 5. De una línea de C al bus
+
+En esta tarea no hay que buscar nada en el código: primero se explica qué hace el programa con la UART y después lo ven pasar en las formas de onda.
+
+### 5.1 Cómo `imprimir` usa los registros de la UART
+
+En `soc.h`, `imprimir` envía un texto letra por letra con `uart_putc`. Esta es cada línea de C y las instrucciones que generó el compilador (están en `soc/build/firmware.lst`):
+
+| Línea de C (`uart_putc` en `soc.h`) | Instrucción | Qué hace en el bus |
+|---|---|---|
+| `UART_DATO = c;` | `sw a3,0(a4)` | **escribe** la letra en DATO (`0x0040_0008`) |
+| `UART_CONTROL = 1;` | `sw a2,0(a5)` | **escribe** 1 en CONTROL (`0x0040_0010`): "envíala" |
+| `UART_CONTROL = 0;` | `sw zero,0(a5)` | **escribe** 0 en CONTROL |
+| `while (UART_CONTROL & UART_OCUPADA)` | `lw a3,0(a5)` · `andi a3,a3,512` · `bnez ...` | **lee** CONTROL y mira el bit 9 (512 = 2⁹): "¿sigues ocupada?" |
+
+Las direcciones de DATO y CONTROL quedaron guardadas en los registros `a4` y `a5` del procesador desde el comienzo de la función.
+
+```mermaid
+flowchart LR
+    A["sw: escribir la letra<br/>en DATO"] --> B["sw: escribir 1<br/>en CONTROL"]
+    B --> C["lw: leer CONTROL<br/>¿bit 9 = 1?"]
+    C -- "sí, ocupada" --> C
+    C -- "no" --> D["siguiente letra"]
+```
+
+Lo importante son dos ideas, y son las que van a usar en la semana 2:
+
+- **Un `sw` a una dirección es escribir en un registro del periférico.** Aquí la letra va a DATO. En la semana 2, un `sw` a `0x0041_0004` pondrá un patrón en sus LEDs.
+- **Un `lw` de una dirección es leer un registro del periférico.** Aquí se lee CONTROL para saber si la UART terminó. En la semana 2, un `lw` de `0x0041_0008` leerá los pulsadores.
+
+> La espera ("¿sigues ocupada?") solo hace falta en periféricos que tardan en terminar, como la UART o el multiplicador. Su GPIO responde de inmediato: no la necesita.
+
+### 5.2 Verlo en las formas de onda
+
+```bash
+make sim ARGS=+vcd     # guarda los primeros 20 000 ciclos
+make wave
+```
+
+En GTKWave, dentro de `tb_soc` → `uut`, agreguen: `clk`, `mem_addr`, `mem_wdata`, `mem_wmask`, `cs` y, dentro de `CPU`, `state`.
+
+Tres ajustes para leer mejor las ondas:
+
+- Pongan `mem_addr` y `mem_wdata` en hexadecimal, y `cs` en binario: clic derecho sobre la señal → *Data Format* → *Hex* o *Binary*.
+- Si `clk` se ve como una línea plana, están demasiado cerca: alejen la vista con la lupa con signo menos hasta ver unos 200 ns.
+- `state` muestra `1`, `2`, `4` u `8`: son los estados BUSCAR, ESPERAR, EJECUTAR y ESPERAR MEMORIA de [Fundamentos 01](Fundamentos/01_RISC-V_y_FemtoRV.md#6-la-máquina-de-estados-del-femtorv).
+
+Busquen el **primer** ciclo en que `mem_addr = 00400008` y `mem_wmask = 1111` (puede aparecer como `F`), cerca de los 2 800 ns. Es la escritura de la primera letra en DATO. Deberían ver:
+
+| Señal | Valor | Qué significa |
+|---|---|---|
+| `mem_addr` | `00400008` | la dirección de DATO |
+| `mem_wdata` | `00000048` | la letra `'H'` en ASCII |
+| `mem_wmask` | `1111` | es una escritura de 4 bytes |
+| `cs` | `0000001` | el `chip_select` eligió la UART (`cs[0]`) |
+| `state` | `4` | el procesador está en EJECUTAR |
+
+Hagan una **captura de pantalla** con el cursor en ese ciclo y, en la bitácora, expliquen con sus palabras cada señal. Comparen con el diagrama de la sección 5 de [Fundamentos 02](Fundamentos/02_Bus_y_perifericos.md#5-una-escritura-y-una-lectura-vistas-en-la-simulación).
+
+### 5.3 Para saber: software contra hardware
+
+`hola.c` calcula 123 × 45 de dos formas:
+
+- **Por software:** un bucle `for` que suma 45 veces. Lo hace el procesador, instrucción por instrucción.
+- **Por hardware:** `mult_hw()` escribe A y B en el multiplicador, le da la orden en INIT, espera DONE y lee RESULT. Son unos pocos `sw` y `lw`: el trabajo lo hace el periférico.
+
+Un detalle: como `a` y `b` son constantes, el compilador hace la cuenta antes de compilar y el bucle desaparece del programa ([Fundamentos 03, sección 5](Fundamentos/03_De_C_a_la_FPGA.md#5-el-compilador-es-más-listo-de-lo-que-parece)). Cuánto cuesta de verdad una tarea hecha por software lo van a medir en el experimento de la semana 2.
+
+---
+
+## Punto de control
+
+Al inicio de la semana 2, cada grupo muestra en 5 minutos:
+
+- [ ] `make sim` funcionando, con el mensaje de su grupo.
+- [ ] El mapa de memoria completo (tareas 3.1 y 3.2).
+- [ ] Una respuesta oral: el profesor señala una dirección y el grupo dice qué bloque la atiende y qué pasa al escribirla.
+
+Si algo no funciona, revisen [Errores_frecuentes.md](Errores_frecuentes.md) y lleguen con la pregunta concreta.
+
+## Lo que va a la bitácora esta semana
+
+- Tarea 1: diagrama, tabla de predicción frente a simulación, respuestas, captura de GTKWave, tiempo medido.
+- Tarea 2: salida de la simulación con su mensaje, tabla de recursos de la síntesis, respuestas.
+- Tarea 3: las dos tablas y las respuestas.
+- Tarea 4: la tabla de las tres piezas y las respuestas.
+- Tarea 5: captura de GTKWave de la escritura de la primera letra, explicada señal por señal.
+
+[← Volver a la guía](README.md) · [Semana 2 →](Semana2.md)

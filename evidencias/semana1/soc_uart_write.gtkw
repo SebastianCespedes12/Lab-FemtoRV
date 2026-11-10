@@ -1,0 +1,18 @@
+[*] GTKWave Analyzer v3.3.116
+[dumpfile] "../../Labs/lab-femtorv/lab-femtorv/soc/build/tb_soc.vcd"
+[savefile] "soc_uart_write.gtkw"
+[timestart] 2760
+[size] 1500 850
+[pos] -1 -1
+[treeopen] tb_soc.
+[treeopen] tb_soc.uut.
+[treeopen] tb_soc.uut.CPU.
+@28
+tb_soc.uut.clk
+@28
+tb_soc.uut.mem_addr[31:0]
+tb_soc.uut.mem_wdata[31:0]
+@29
+tb_soc.uut.mem_wmask[3:0]
+tb_soc.uut.cs[6:0]
+tb_soc.uut.CPU.state[3:0]
