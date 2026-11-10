@@ -31,14 +31,16 @@ Los valores se copian de `MEM[PC]` en `blinker/rtl/blinker.v`. La simulación co
 
 La predicción y la simulación para las primeras ocho posiciones coincidieron:
 
-- PC 0: predicción `00000`; simulación `00000`.
-- PC 1: predicción `00001`; simulación `00001`.
-- PC 2: predicción `00010`; simulación `00010`.
-- PC 3: predicción `00100`; simulación `00100`.
-- PC 4: predicción `01000`; simulación `01000`.
-- PC 5: predicción `10000`; simulación `10000`.
-- PC 6: predicción `10001`; simulación `10001`.
-- PC 7: predicción `10010`; simulación `10010`.
+| PC | Predicción de LEDs | Simulación de LEDs |
+|---:|:---:|:---:|
+| 0 | `00000` | `00000` |
+| 1 | `00001` | `00001` |
+| 2 | `00010` | `00010` |
+| 3 | `00100` | `00100` |
+| 4 | `01000` | `01000` |
+| 5 | `10000` | `10000` |
+| 6 | `10001` | `10001` |
+| 7 | `10010` | `10010` |
 
 Comando ejecutado: `cd Labs/lab-femtorv/lab-femtorv/blinker && make sim`. La salida recorrió los PC de 0 a 20, volvió al inicio y mostró los patrones almacenados en la ROM.
 
@@ -70,8 +72,10 @@ El registro `dato` toma `MEM[PC]` en un `always @(posedge clk)`. Como tanto `PC`
 
 En la Tang Nano 9K, el divisor tiene `DIV_BITS = 22`, así que un paso tarda $2^{22}=4\,194\,304$ ciclos. Se sintetizó y cargó el blinker en la tarjeta; se observó que el patrón de LEDs recorre la secuencia y vuelve al inicio. El ciclo se verificó visualmente, pero no se midió con cronómetro.
 
-- **Colorlight 5A-75E:** reloj de 25 MHz; tiempo por paso de 0.16777216 s; secuencia completa de 21 pasos de 3.52321536 s.
-- **Tang Nano 9K:** reloj de 27 MHz; tiempo por paso de 0.15534459 s; secuencia completa de 21 pasos de 3.26223644 s.
+| Tarjeta | Frecuencia | Tiempo por paso | Tiempo para 21 pasos |
+|---|---:|---:|---:|
+| Colorlight 5A-75E | 25 MHz | 0.16777216 s | 3.52321536 s |
+| Tang Nano 9K | 27 MHz | 0.15534459 s | 3.26223644 s |
 
 Estos tiempos son cálculos teóricos basados en las frecuencias nominales. En Tang Nano el top invierte las salidas porque sus LEDs físicos son activos en bajo; los tiempos anteriores corresponden a la secuencia lógica interna del blinker.
 
@@ -117,7 +121,15 @@ Fin. El programa queda en un bucle infinito.
 
 La síntesis/place-and-route pasó para el reloj de 27 MHz de la tarjeta y reportó:
 
-La síntesis/place-and-route reportó 2147 de 8640 LUT4 (24 %), 618 de 6480 DFF (9 %), 16 de 26 BSRAM (61 %) y 11 de 276 IOB (3 %). La frecuencia máxima reportada fue 51.57 MHz, por encima de la frecuencia objetivo de 27 MHz; el flujo indicó PASS.
+| Recurso o métrica | Resultado |
+|---|---:|
+| LUT4 | 2147 / 8640 (24 %) |
+| DFF | 618 / 6480 (9 %) |
+| BSRAM | 16 / 26 (61 %) |
+| IOB | 11 / 276 (3 %) |
+| Frecuencia máxima | 51.57 MHz |
+
+La frecuencia máxima reportada supera la frecuencia objetivo de 27 MHz; el flujo indicó PASS.
 
 También se sintetizó y cargó el blinker para la Tang Nano; se observó que el patrón de LEDs se repite. El periodo teórico de la secuencia completa a 27 MHz es aproximadamente 3.262 s. No se tomó una medición cronometrada del periodo.
 
@@ -139,13 +151,15 @@ La RAM del SoC se inicializa con `firmware.hex` mediante `$readmemh`. Al sinteti
 
 El mapa de bloques queda así:
 
-- `0x0000_0000`–`0x0000_7FFF`: RAM de 32 KB; activa `cs[6]` (`1000000`) y devuelve `RAM_rdata`.
-- `0x0040_0000`–`0x0040_FFFF`: UART; activa `cs[0]` (`0000001`) y devuelve `uart_dout`.
-- `0x0041_0000`–`0x0041_FFFF`: bloque libre, reservado para GPIO; activa `cs[1]` (`0000010`) y devuelve `0x00000000`.
-- `0x0042_0000`–`0x0042_FFFF`: multiplicador; activa `cs[2]` (`0000100`) y devuelve `mult_dout`.
-- `0x0043_0000`–`0x0043_FFFF`: bloque libre; activa `cs[3]` (`0001000`) y devuelve `0x00000000`.
-- `0x0044_0000`–`0x0044_FFFF`: bloque libre; activa `cs[4]` (`0010000`) y devuelve `0x00000000`.
-- `0x0045_0000`–`0x0045_FFFF`: bloque libre; activa `cs[5]` (`0100000`) y devuelve `0x00000000`.
+| Rango de direcciones | Bloque | Señal `cs` | Dato leído que vuelve al CPU |
+|---|---|---|---|
+| `0x0000_0000`–`0x0000_7FFF` | RAM de 32 KB | `cs[6]` = `1000000` | `RAM_rdata` |
+| `0x0040_0000`–`0x0040_FFFF` | UART | `cs[0]` = `0000001` | `uart_dout` |
+| `0x0041_0000`–`0x0041_FFFF` | Libre, reservado para GPIO | `cs[1]` = `0000010` | `0x00000000` |
+| `0x0042_0000`–`0x0042_FFFF` | Multiplicador | `cs[2]` = `0000100` | `mult_dout` |
+| `0x0043_0000`–`0x0043_FFFF` | Libre | `cs[3]` = `0001000` | `0x00000000` |
+| `0x0044_0000`–`0x0044_FFFF` | Libre | `cs[4]` = `0010000` | `0x00000000` |
+| `0x0045_0000`–`0x0045_FFFF` | Libre | `cs[5]` = `0100000` | `0x00000000` |
 
 En el decodificador, cualquier dirección cuyo segmento alto no coincide con `0x0040`–`0x0045` selecciona la RAM (`cs[6]`). Sin embargo, la memoria implementada solo tiene 8192 palabras, es decir, 32 KB en `0x0000_0000`–`0x0000_7FFF`.
 
@@ -155,13 +169,15 @@ La base de cada periférico selecciona el bloque; los bits bajos de la direcció
 
 Los registros implementados son:
 
-- UART DATO en `0x0040_0008` (lectura y escritura): al escribir, `[7:0]` es el byte que se transmite; al leer, `[7:0]` es el último byte recibido.
-- UART CONTROL en `0x0040_0010` (lectura y escritura): al escribir, el bit 0 inicia la transmisión, el bit 1 confirma la recepción y el bit 2 controla el LED asociado a la UART. Al leer, el bit 7 es `rx_error`, el bit 8 es `rx_avail` y el bit 9 es `tx_busy`; los demás bits son cero.
-- MULT A en `0x0042_0004` (escritura): `[15:0]` guarda el operando A; no tiene lectura implementada.
-- MULT B en `0x0042_0008` (escritura): `[15:0]` guarda el operando B; no tiene lectura implementada.
-- MULT INIT en `0x0042_000C` (escritura): el bit 0 inicia la multiplicación; el programa escribe 1 y luego 0.
-- MULT RESULT en `0x0042_0010` (lectura): devuelve el resultado de 32 bits; las escrituras no programan este registro.
-- MULT DONE en `0x0042_0014` (lectura): devuelve `done` en el bit 0 y ceros en `[31:1]`; las escrituras no programan este registro.
+| Dirección | Periférico | Registro | Lectura/escritura | Significado |
+|---|---|---|---|---|
+| `0x0040_0008` | UART | DATO | Ambas | Escribir `[7:0]` envía un byte; leer `[7:0]` devuelve el último byte recibido. |
+| `0x0040_0010` | UART | CONTROL | Ambas | Al escribir: bit 0 inicia TX, bit 1 confirma RX y bit 2 controla el LED UART. Al leer: bit 7 indica error RX, bit 8 dato RX disponible y bit 9 transmisor ocupado. |
+| `0x0042_0004` | MULT | A | Escritura | Guarda el operando A en `[15:0]`; no tiene lectura implementada. |
+| `0x0042_0008` | MULT | B | Escritura | Guarda el operando B en `[15:0]`; no tiene lectura implementada. |
+| `0x0042_000C` | MULT | INIT | Escritura | El bit 0 inicia la operación; se escribe 1 y luego 0. |
+| `0x0042_0010` | MULT | RESULT | Lectura | Devuelve el producto de 32 bits; las escrituras no programan este registro. |
+| `0x0042_0014` | MULT | DONE | Lectura | Devuelve `done` en el bit 0 y ceros en `[31:1]`; las escrituras no programan este registro. |
 
 Las direcciones coinciden con los `#define` de `soc/firmware/soc.h`.
 
@@ -176,9 +192,11 @@ El código revisado está en `soc/rtl/cpu/femtorv32_quark.v`.
 
 Las tres piezas localizadas son:
 
-- **PC:** `PC` y `PCplus4`, aproximadamente líneas 197–200. Guarda la dirección de la instrucción actual, normalmente avanza cuatro bytes y puede cambiar a un destino de salto.
-- **Máquina de estados:** `FETCH_INSTR`, `WAIT_INSTR`, `EXECUTE`, `WAIT_ALU_OR_MEM` y el registro `state`, aproximadamente líneas 295–357. Busca la instrucción, espera el dato, la ejecuta y añade esperas si la ALU o la memoria lo requieren.
-- **Interfaz de memoria:** `assign mem_addr`, línea 218. Selecciona la dirección que el procesador presenta en el bus: PC para buscar instrucciones o dirección efectiva para `lw`/`sw`.
+| Pieza | Ubicación aproximada | Función |
+|---|---|---|
+| PC | `PC` y `PCplus4`, líneas 197–200 | Guarda la dirección de la instrucción actual; normalmente avanza cuatro bytes y puede cambiar al destino de un salto. |
+| Máquina de estados | `FETCH_INSTR`, `WAIT_INSTR`, `EXECUTE`, `WAIT_ALU_OR_MEM` y `state`, líneas 295–357 | Busca la instrucción, espera el dato, la ejecuta y añade esperas si la ALU o la memoria lo requieren. |
+| Interfaz de memoria | `assign mem_addr`, línea 218 | Selecciona la dirección del bus: PC para buscar instrucciones o dirección efectiva para `lw`/`sw`. |
 
 Las ubicaciones se refieren a las líneas del archivo Verilog del repositorio; pueden variar si se modifica el archivo.
 
@@ -193,16 +211,26 @@ Dentro de `uart_putc`, el compilador convierte las operaciones de E/S mapeada en
 
 Las operaciones de `uart_putc` llegan al bus de la siguiente manera:
 
-- `UART_DATO = c;` se compila como `sw a3,0(a4)`. `a4` contiene `0x0040_0008`, así que se escribe el byte de `c` en DATO.
-- `UART_CONTROL = 1;` se compila como `sw a2,0(a5)`. `a5` contiene `0x0040_0010`; se solicita la transmisión activando el bit 0.
-- `UART_CONTROL = 0;` se compila como `sw zero,0(a5)` y escribe cero en CONTROL después de iniciar el envío.
-- `while (UART_CONTROL & UART_OCUPADA)` genera una lectura `lw a3,0(a5)`, seguida de `andi a3,a3,512` y una rama condicional. Lee CONTROL, aísla el bit 9 y repite mientras `tx_busy` sea 1.
+| Línea de C | Instrucción del listado | Efecto |
+|---|---|---|
+| `UART_DATO = c;` | `sw a3,0(a4)` | Escribe el carácter en DATO, dirección `0x0040_0008`. |
+| `UART_CONTROL = 1;` | `sw a2,0(a5)` | Escribe 1 en CONTROL, dirección `0x0040_0010`, para iniciar TX. |
+| `UART_CONTROL = 0;` | `sw zero,0(a5)` | Escribe 0 en CONTROL después de iniciar el envío. |
+| `while (UART_CONTROL & UART_OCUPADA)` | `lw`, `andi` con máscara 512 y rama condicional | Lee CONTROL y repite mientras el bit 9 (`tx_busy`) sea 1. |
 
 ### Ciclo de escritura de la primera letra
 
 La primera letra transmitida es `H`, cuyo código ASCII es `0x48`. En el primer ciclo de escritura de DATO se espera observar:
 
-En ese ciclo, `mem_addr = 0x00400008` selecciona DATO de la UART; `mem_wdata = 0x00000048` es el ASCII de `H`; `mem_wmask = 1111` habilita los cuatro bytes de la palabra; `cs = 0000001` activa la UART en `cs[0]`; y `state = 4` indica que el CPU está en `EXECUTE`.
+En ese ciclo se observan estos valores:
+
+| Señal | Valor observado/esperado | Interpretación |
+|---|---|---|
+| `mem_addr` | `0x00400008` | Dirección del registro DATO. |
+| `mem_wdata` | `0x00000048` | Código ASCII de `H`. |
+| `mem_wmask` | `1111` | Escritura de la palabra completa. |
+| `cs` | `0000001` | Se seleccionó la UART (`cs[0]`). |
+| `CPU.state` | `4` | Estado `EXECUTE`. |
 
 El proceso es: `sw` coloca dirección y dato en el bus; los 16 bits altos de la dirección hacen que el decodificador seleccione UART; la UART reconoce el desplazamiento `0x08` y guarda los ocho bits bajos del dato para transmitirlos. Una lectura `lw` posterior de CONTROL consulta el estado de transmisión. La captura de GTKWave con `clk`, `mem_addr`, `mem_wdata`, `mem_wmask`, `cs` y `CPU.state` muestra la escritura de la primera letra:
 
